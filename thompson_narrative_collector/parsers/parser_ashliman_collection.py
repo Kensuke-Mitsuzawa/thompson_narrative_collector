@@ -103,15 +103,14 @@ class AshlimanCollectionParser(BaseParser):
             return False
         if 'Source' in node_end_story.next_sibling.__str__():
             source_info_node = node_end_story
-
         else:
             source_info_node = node_end_story.next_sibling.next_sibling
 
         source_info_text = source_info_node.text if isinstance(source_info_node, Tag) else source_info_node.__str__()
         source_info = re.search(r'Source:[\s\w,\(\)\:]*', source_info_text)
-        print(node_end_story, source_info)
         if html_pattern == 'pattern2':
             # extracts source information from html
+            print(source_info_node)
             seq_li_nodes = source_info_node.find_all('li')
             for li_node in seq_li_nodes:
                 print(li_node.text)
