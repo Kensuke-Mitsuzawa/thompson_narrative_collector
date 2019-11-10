@@ -125,7 +125,8 @@ class AshlimanCollectionParser(BaseParser):
         :param source_text: original HTML node of source information
         :return: cleaned-up source information
         """
-        _ = re.sub(r'[<hr/><ul><li><i><hr/></ul></li></i>]', '', source_text)
+        _ = re.sub(r'<.*?>', '', source_text)
+
         return _
 
     def __clean_up_note(self, note_string: str)->Tuple[str, Optional[List[str]]]:
@@ -134,10 +135,15 @@ class AshlimanCollectionParser(BaseParser):
         :param note_string:
         :return: (cleaned-note-info, [ATU-info])
         """
+        if 'aarne-thompson-uther' in note_string.lower():
+            type_numbers = re.findall(r'type\s[0-9]+', note_string)
+            atus = [__.strip('type ') for __ in type_numbers]
+            return note_string, atus
+        else:
+            _ = re.sub(r'<.*?>', '', note_string)
+            return (_, None)
 
-        pass
-
-    def __extract_story_broken_structure(self, seq_broken_nodes: List[str], body_text: str)->StoryMetaInformation:
+    def __extract_story_broken_structure(self, seq_broken_nodes: List[str], body_text: str) -> StoryMetaInformation:
         """Extract (story-body, Source-info, note-info, ATU-info) when HTML structure is broken.
 
         :return: StoryMetaInformation
@@ -149,6 +155,9 @@ class AshlimanCollectionParser(BaseParser):
                 # keep getting nodes unti "return to the~"
                 source_node = broken_node_string
                 note_string_node = ''
+                if broken_i == len(seq_broken_nodes) -1:
+                    break
+
                 while True:
                     if 'Return to the' in seq_broken_nodes[broken_i + 1]:
                         break
@@ -160,28 +169,34 @@ class AshlimanCollectionParser(BaseParser):
                 body_text += broken_node_string.replace('<p>', '').replace('</p>', '')
 
         cleaned_source = self.__clean_up_source(source_node)
-        # todo 作業中（ATU番号を獲得する処理）
-        self.__clean_up_note(note_string_node)
+        # extract ATU
+        cleaned_note = self.__clean_up_note(note_string_node)
 
-        return body_text, source_node, note_string_node
+        return StoryMetaInformation(body=body_text,
+                                    source=cleaned_source,
+                                    note=cleaned_note[0],
+                                    atu=cleaned_note[1])
 
-
-    def __extract_story_body(self, start_node: Tag):
+    def __extract_story_body(self, start_node: Tag) -> StoryMetaInformation:
         """Extracts only (story-body, Source-info, ATU-number if exists)
 
         :param start_node:
         :return:
         """
         body_text = ''
-        seq_nodes = [n.__str__() for n in start_node.next_siblings]
+        cleaned_source = ''
+        cleaned_note = ('', [])
+        seq_nodes = [start_node.__str__()] + [n.__str__() for n in start_node.next_siblings]
         for node_string in seq_nodes:
             __node_string = node_string.replace('\n', '')
             if re.search('<p>.+<li>Source', __node_string):
-                # some story-blocks are missing </p> tag. Broken.
+                # some story-blocks are missing </p> tag. Broken structure.
                 seq_broken_nodes = __node_string.split('<p>')
-                self.__extract_story_broken_structure(seq_broken_nodes, body_text)
-                break
+                return self.__extract_story_broken_structure(seq_broken_nodes, body_text)
             if re.search(r'<li>Source:', node_string):
+                cleaned_source = self.__clean_up_source(node_string)
+                # extract ATU
+                cleaned_note = self.__clean_up_note(node_string)
                 break
             else:
                 if re.search(r'<p>.+', node_string):
@@ -190,12 +205,18 @@ class AshlimanCollectionParser(BaseParser):
                     continue
                 elif node_string == '<hr/>':
                     continue
+                elif re.search(r'\n.+', node_string):
+                    body_text += node_string.replace('\n', '')
+                elif re.search(r'<i>', node_string):
+                    body_text += node_string.replace('<i>', '').replace('</i>', '')
                 else:
-                    raise Exception('Unexpected case: ' + node_string)
+                    body_text += node_string
+                    # raise Exception('Unexpected case: ' + node_string)
 
-
-
-
+        return StoryMetaInformation(body=body_text,
+                                    source=cleaned_source,
+                                    note=cleaned_note[0],
+                                    atu=cleaned_note[1])
 
     def __get_folktale_unit(self, hr_node: Tag, html_pattern: str, atu_numbers: Optional[List[str]]=())->Optional[FolkloreDocument]:
         """Extracts folktale story text(one story) and meta information from Nodes."""
@@ -209,35 +230,38 @@ class AshlimanCollectionParser(BaseParser):
             folktale_area = h3_node_folktale_area.text.strip()
 
             start_node = h3_node_folktale_area.next_sibling
-            body_text = self.__extract_story_body(start_node)
+            story_meta_information = self.__extract_story_body(start_node)
 
             f_obj = FolkloreDocument(
                 title=folktale_name,
-                body=body_text,
+                body=story_meta_information.body,
                 author='',
-                atu_labels=[],
+                atu_labels=story_meta_information.atu,
                 language='English',
                 source_area=folktale_area,
                 source_url='',  # put information later
-                source_article='',
-                attributes={}
+                source_article=story_meta_information.source,
+                attributes={'note': story_meta_information.note}
             )
             return f_obj
         else:
             return None
 
-
     def get_folktale_unit(self, soup_obj: BeautifulSoup, html_pattern: str)->List[FolkloreDocument]:
         seq_hr_node = soup_obj.find_all('hr')
+        __return = []
         for hr_node in seq_hr_node:
-            self.__get_folktale_unit(hr_node, html_pattern)
+            __ = self.__get_folktale_unit(hr_node, html_pattern)
+            if __ is not None:
+                __return.append(__)
+        else:
+            return __return
 
-
-    def parse_folktale_page(self, folklore_html: str)->FolkloreDocument:
+    def parse_folktale_page(self, folklore_html: str)->List[FolkloreDocument]:
         soup_obj = BeautifulSoup(folklore_html, 'html.parser')
         # pattern-1 <hr><h2><h3> tales... <hr><ul><li>tales meta data</li><hr>
         html_pattern = self.get_html_pattern(soup_obj)
-        self.get_folktale_unit(soup_obj, html_pattern)
+        return self.get_folktale_unit(soup_obj, html_pattern)
 
 
 

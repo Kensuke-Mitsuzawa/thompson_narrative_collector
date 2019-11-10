@@ -21,17 +21,17 @@ class TestAshlimanCollectionParser(unittest.TestCase):
         with codecs.open(pathlib.Path(self.path_resource).joinpath('abduct.html'), 'r', 'utf-16') as f:
             html_doc_pattern_1 = f.read()
         parser = AshlimanCollectionParser()
-        parser.parse_folktale_page(html_doc_pattern_1)
+        docs_page1 = parser.parse_folktale_page(html_doc_pattern_1)
 
         with codecs.open(pathlib.Path(self.path_resource).joinpath('type0910b.html'), 'r', 'utf-8') as f:
             html_doc_pattern_2 = f.read()
         parser = AshlimanCollectionParser()
-        parser.parse_folktale_page(html_doc_pattern_2)
+        docs_page2 = parser.parse_folktale_page(html_doc_pattern_2)
 
         with codecs.open(pathlib.Path(self.path_resource).joinpath('alibaba.html'), 'r', 'utf-8') as f:
             html_doc_pattern_3 = f.read()
         parser = AshlimanCollectionParser()
-        parser.parse_folktale_page(html_doc_pattern_3)
+        docs_page3 = parser.parse_folktale_page(html_doc_pattern_3)
 
 
 if __name__ == '__main__':
